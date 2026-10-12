@@ -36,6 +36,43 @@ public class MetaWhatsAppService {
         return post(payload);
     }
 
+    public Object sendImage(com.example.whatsapp.dto.SendMediaRequest request) {
+        return sendMedia("image", request);
+    }
+
+    public Object sendVideo(com.example.whatsapp.dto.SendMediaRequest request) {
+        return sendMedia("video", request);
+    }
+
+    private Object sendMedia(String mediaType, com.example.whatsapp.dto.SendMediaRequest request) {
+        boolean hasLink = request.link() != null && !request.link().isBlank();
+        boolean hasMediaId = request.mediaId() != null && !request.mediaId().isBlank();
+        if (hasLink == hasMediaId) {
+            throw new IllegalArgumentException("Provide exactly one of 'link' or 'mediaId'.");
+        }
+
+        Map<String, Object> media = new LinkedHashMap<>();
+        if (hasLink) {
+            if (!request.link().startsWith("https://")) {
+                throw new IllegalArgumentException("Media link must be a publicly accessible HTTPS URL.");
+            }
+            media.put("link", request.link());
+        } else {
+            media.put("id", request.mediaId());
+        }
+        if (request.caption() != null && !request.caption().isBlank()) {
+            media.put("caption", request.caption());
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("messaging_product", "whatsapp");
+        payload.put("recipient_type", "individual");
+        payload.put("to", normalize(request.to()));
+        payload.put("type", mediaType);
+        payload.put(mediaType, media);
+        return post(payload);
+    }
+
     public Object sendTemplate(TemplateRequest request) {
         Map<String,Object> template = new LinkedHashMap<>();
         template.put("name", request.templateName());

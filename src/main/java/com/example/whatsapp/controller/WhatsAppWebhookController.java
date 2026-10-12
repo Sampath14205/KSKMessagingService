@@ -48,11 +48,6 @@ public class WhatsAppWebhookController {
     public ResponseEntity<String> receive(
             @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
             @RequestBody String payload) {
-
-        System.out.println("========== WHATSAPP WEBHOOK ==========");
-        System.out.println(payload);
-        System.out.println("======================================");
-
         if (!isValidSignature(signature, payload)) {
             log.warn("Rejected WhatsApp webhook: invalid signature");
             return ResponseEntity.status(401).body("Invalid signature");

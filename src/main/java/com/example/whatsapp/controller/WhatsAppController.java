@@ -21,6 +21,16 @@ public class WhatsAppController {
         return service.sendText(request);
     }
 
+    @PostMapping("/send/image")
+    public Object sendImage(@Valid @RequestBody SendMediaRequest request) {
+        return service.sendImage(request);
+    }
+
+    @PostMapping("/send/video")
+    public Object sendVideo(@Valid @RequestBody SendMediaRequest request) {
+        return service.sendVideo(request);
+    }
+
     @PostMapping("/send/template")
     public Object sendTemplate(@Valid @RequestBody TemplateRequest request) {
         return service.sendTemplate(request);
