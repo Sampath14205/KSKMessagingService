@@ -7,7 +7,7 @@ spring:
   data:
     mongodb:
       auto-index-creation: true
-      uri: ${MONGO_URL}
+      uri: ${{ MongoDB.MONGO_PRIVATE_URL }}
 
 management:
   endpoints:
