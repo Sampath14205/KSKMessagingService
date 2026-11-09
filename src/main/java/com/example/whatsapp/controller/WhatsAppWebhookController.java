@@ -1,6 +1,7 @@
 package com.example.whatsapp.controller;
 
-import com.example.whatsapp.config.MetaProperties;
+import com.example.whatsapp.model.WhatsAppConfiguration;
+import com.example.whatsapp.service.DatabaseConfigurationService;
 import com.example.whatsapp.model.InboundWhatsAppMessage;
 import com.example.whatsapp.service.InboundMessageStore;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -22,13 +23,13 @@ import java.util.HexFormat;
 public class WhatsAppWebhookController {
     private static final Logger log = LoggerFactory.getLogger(WhatsAppWebhookController.class);
 
-    private final MetaProperties props;
+    private final DatabaseConfigurationService configurationService;
     private final ObjectMapper objectMapper;
     private final InboundMessageStore store;
 
-    public WhatsAppWebhookController(MetaProperties props, ObjectMapper objectMapper,
-                                     InboundMessageStore store) {
-        this.props = props;
+    public WhatsAppWebhookController(DatabaseConfigurationService configurationService,
+                                     ObjectMapper objectMapper, InboundMessageStore store) {
+        this.configurationService = configurationService;
         this.objectMapper = objectMapper;
         this.store = store;
     }
@@ -38,7 +39,9 @@ public class WhatsAppWebhookController {
             @RequestParam(name = "hub.mode", required = false) String mode,
             @RequestParam(name = "hub.verify_token", required = false) String verifyToken,
             @RequestParam(name = "hub.challenge", required = false) String challenge) {
-        if ("subscribe".equals(mode) && props.verifyToken().equals(verifyToken)) {
+        WhatsAppConfiguration config = verifyToken == null ? null
+                : configurationService.findByVerifyToken(verifyToken);
+        if ("subscribe".equals(mode) && config != null && config.active()) {
             return ResponseEntity.ok(challenge == null ? "" : challenge);
         }
         return ResponseEntity.status(403).body("Verification failed");
@@ -48,13 +51,15 @@ public class WhatsAppWebhookController {
     public ResponseEntity<String> receive(
             @RequestHeader(value = "X-Hub-Signature-256", required = false) String signature,
             @RequestBody String payload) {
-        if (!isValidSignature(signature, payload)) {
-            log.warn("Rejected WhatsApp webhook: invalid signature");
-            return ResponseEntity.status(401).body("Invalid signature");
-        }
-
         try {
             JsonNode root = objectMapper.readTree(payload);
+            String phoneNumberId = root.path("entry").path(0).path("changes").path(0)
+                    .path("value").path("metadata").path("phone_number_id").asText("");
+            WhatsAppConfiguration config = configurationService.findByPhoneNumberId(phoneNumberId);
+            if (config == null || !isValidSignature(signature, payload, config.appSecret())) {
+                log.warn("Rejected WhatsApp webhook: configuration missing or invalid signature");
+                return ResponseEntity.status(401).body("Invalid signature or configuration");
+            }
             JsonNode entries = root.path("entry");
             if (entries.isArray()) {
                 for (JsonNode entry : entries) {
@@ -123,37 +128,48 @@ public class WhatsAppWebhookController {
     }
 
     private String extractBody(JsonNode message, String type) {
-        return switch (type) {
-            case "text" -> message.path("text").path("body").asText("");
-            case "button" -> message.path("button").path("text").asText("");
-            case "interactive" -> {
+        switch (type) {
+            case "text":
+                return message.path("text").path("body").asText("");
+            case "button":
+                return message.path("button").path("text").asText("");
+            case "interactive":
                 JsonNode interactive = message.path("interactive");
                 JsonNode buttonReply = interactive.path("button_reply");
                 JsonNode listReply = interactive.path("list_reply");
-                if (!buttonReply.isMissingNode()) yield buttonReply.path("title").asText("");
-                if (!listReply.isMissingNode()) yield listReply.path("title").asText("");
-                yield "";
-            }
-            case "image" -> "[image] " + message.path("image").path("id").asText("");
-            case "document" -> "[document] " + message.path("document").path("filename").asText("");
-            case "audio" -> "[audio] " + message.path("audio").path("id").asText("");
-            case "video" -> "[video] " + message.path("video").path("id").asText("");
-            case "location" -> "[location] " + message.path("location").path("latitude").asText("")
-                    + "," + message.path("location").path("longitude").asText("");
-            case "contacts" -> "[contact card]";
-            case "sticker" -> "[sticker] " + message.path("sticker").path("id").asText("");
-            default -> "";
-        };
+                if (!buttonReply.isMissingNode()) {
+                    return buttonReply.path("title").asText("");
+                }
+                if (!listReply.isMissingNode()) {
+                    return listReply.path("title").asText("");
+                }
+                return "";
+            case "image":
+                return "[image] " + message.path("image").path("id").asText("");
+            case "document":
+                return "[document] " + message.path("document").path("filename").asText("");
+            case "audio":
+                return "[audio] " + message.path("audio").path("id").asText("");
+            case "video":
+                return "[video] " + message.path("video").path("id").asText("");
+            case "location":
+                return "[location] " + message.path("location").path("latitude").asText("")
+                        + "," + message.path("location").path("longitude").asText("");
+            case "contacts":
+                return "[contact card]";
+            case "sticker":
+                return "[sticker] " + message.path("sticker").path("id").asText("");
+            default:
+                return "";
+        }
     }
 
-    private boolean isValidSignature(String signature, String payload) {
-        // For local webhook tests only, an empty App Secret disables signature validation.
-        // Set META_APP_SECRET in production.
-        if (props.appSecret() == null || props.appSecret().isBlank()) return true;
+    private boolean isValidSignature(String signature, String payload, String appSecret) {
+        if (appSecret == null || appSecret.isBlank()) return false;
         if (signature == null || !signature.startsWith("sha256=")) return false;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(props.appSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.init(new SecretKeySpec(appSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] digest = mac.doFinal(payload.getBytes(StandardCharsets.UTF_8));
             String expected = "sha256=" + HexFormat.of().formatHex(digest);
             return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),

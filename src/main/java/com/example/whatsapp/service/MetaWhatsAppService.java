@@ -1,6 +1,6 @@
 package com.example.whatsapp.service;
 
-import com.example.whatsapp.config.MetaProperties;
+import com.example.whatsapp.model.WhatsAppConfiguration;
 import com.example.whatsapp.dto.TemplateRequest;
 import com.example.whatsapp.dto.SendTextRequest;
 import org.springframework.http.MediaType;
@@ -14,11 +14,11 @@ import java.util.concurrent.CompletableFuture;
 public class MetaWhatsAppService {
 
     private final RestClient restClient;
-    private final MetaProperties props;
+    private final DatabaseConfigurationService configurationService;
 
-    public MetaWhatsAppService(RestClient restClient, MetaProperties props) {
+    public MetaWhatsAppService(RestClient restClient, DatabaseConfigurationService configurationService) {
         this.restClient = restClient;
-        this.props = props;
+        this.configurationService = configurationService;
     }
 
     public Object sendText(SendTextRequest request) {
@@ -137,22 +137,28 @@ public class MetaWhatsAppService {
     }
 
     private Object post(Map<String,Object> payload) {
-        String url = props.graphUrl() + "/" + props.graphVersion()
-                + "/" + props.phoneNumberId() + "/messages";
+        return post(payload, null);
+    }
+
+    public Object post(Map<String,Object> payload, String businessId) {
+        WhatsAppConfiguration config = configurationService.getActiveConfiguration(businessId);
+        String url = config.graphUrl() + "/" + config.graphVersion()
+                + "/" + config.phoneNumberId() + "/messages";
 
         return restClient.post()
                 .uri(url)
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("Authorization", "Bearer " + props.accessToken())
+                .header("Authorization", "Bearer " + config.accessToken())
                 .body(payload)
                 .retrieve()
                 .body(Object.class);
     }
 
     private void validateBatch(int size) {
-        if (size == 0 || size > props.maxBatchSize()) {
+        int maxBatchSize = configurationService.getActiveConfiguration().maxBatchSize();
+        if (size == 0 || size > maxBatchSize) {
             throw new IllegalArgumentException(
-                    "Batch size must be between 1 and " + props.maxBatchSize());
+                    "Batch size must be between 1 and " + maxBatchSize);
         }
     }
 
@@ -161,9 +167,10 @@ public class MetaWhatsAppService {
     }
 
     private void sleep() {
-        if (props.bulkDelayMs() <= 0) return;
+        long delay = configurationService.getActiveConfiguration().bulkDelayMs();
+        if (delay <= 0) return;
         try {
-            Thread.sleep(props.bulkDelayMs());
+            Thread.sleep(delay);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Bulk sending interrupted", e);

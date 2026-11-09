@@ -1,6 +1,8 @@
 package com.example.whatsapp.model;
 
 import java.time.Instant;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 public record InboundWhatsAppMessage(
         String messageId,
