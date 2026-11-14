@@ -33,7 +33,7 @@ public class MetaWhatsAppService {
         payload.put("type", "text");
         payload.put("text", text);
 
-        return post(payload);
+        return post(payload,request.businessId());
     }
 
     public Object sendImage(com.example.whatsapp.dto.SendMediaRequest request) {
@@ -137,7 +137,7 @@ public class MetaWhatsAppService {
     }
 
     private Object post(Map<String,Object> payload) {
-        return post(payload, null);
+        return post(payload, "KSK-C7473A34E15B");
     }
 
     public Object post(Map<String,Object> payload, String businessId) {
